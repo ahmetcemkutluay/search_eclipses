@@ -9,7 +9,7 @@ This pipeline downloads TESS photometry, runs [ECLIPSR](https://github.com/LucIJ
 ## Installation
 
 ```bash
-git clone https://github.com/<username>/search_eclipses.git
+git clone https://github.com/ahmetcemkutluay/search_eclipses.git
 cd search_eclipses
 python -m venv venv
 source venv/bin/activate
