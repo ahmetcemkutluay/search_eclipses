@@ -1,20 +1,17 @@
-#!/usr/bin/env python3
 """
-tess_sectors.dat dosyasini kendi TESS FITS dosyalarindan uretir/gunceller.
+Generates/updates the `tess_sectors.dat` file from your own TESS FITS files.
 
-Neden: ECLIPSR'in get_tess_sectors() fonksiyonu paketle gelen
-eclipsr/data/tess_sectors.dat dosyasindaki JD sinirlarini kullanir. Bir veri
-noktasi hicbir sektor araliginin icine dusmezse normalise_counts() o noktayi
-sessizce 0.0 yapar. Bu script sinirlari dogrudan FITS basliklarindaki
-TSTART/TSTOP degerlerinden aldigi icin boyle bir bosluk olusmaz.
+Rationale: The `get_tess_sectors()` function in ECLIPSR relies on the JD (Julian Date) boundaries
+defined in the `eclipsr/data/tess_sectors.dat` file included with the package. 
+If a data point does not fall within any of these sector intervals, `normalise_counts()` silently sets that point to 0.0. 
+This script avoids such gaps by deriving the boundaries directly from the `TSTART` and `TSTOP` values ​​found in the FITS file headers.
 
-Kullanim:
-    python build_tess_sectors.py "lc/*.fits"
-    python build_tess_sectors.py "lc/*.fits" --base tess_sectors.dat
-    python build_tess_sectors.py "lc/*.fits" --inplace   # kurulu paketi gunceller
+Usage:
+python build_tess_sectors.py "lc/*.fits"
+python build_tess_sectors.py "lc/*.fits" --base tess_sectors.dat
+python build_tess_sectors.py "lc/*.fits" --inplace   # updates the installed package
 
---base verilirse o dosyadaki satirlar korunur, FITS'ten gelen sektorler
-onlarin uzerine yazilir / sonlarina eklenir.
+If the `--base` argument is provided, the existing entries in that file are preserved; sectors extracted from the FITS files are then either overwritten or appended to the list.
 """
 import argparse
 import glob
@@ -25,11 +22,11 @@ import numpy as np
 from astropy.io import fits
 
 BJD_REF = 2457000.0
-PAD = 0.02  # ~30 dakika emniyet payi (gun cinsinden)
+PAD = 0.02  
 
 
 def read_fits_sector(path):
-    """Bir TESS lightcurve FITS dosyasindan (sektor, tstart, tstop) dondurur."""
+    """Returns (sector, tstart, tstop) from a TESS lightcurve FITS file."""
     with fits.open(path) as hdul:
         hdr0, hdr1 = hdul[0].header, hdul[1].header
         sector = hdr0.get("SECTOR", hdr1.get("SECTOR"))
@@ -46,7 +43,7 @@ def read_fits_sector(path):
 
 
 def load_base(path):
-    """Mevcut tess_sectors.dat dosyasini {sektor: (jd1, jd2)} olarak okur."""
+    """Reads the existing tess_sectors.dat file as {sector: (jd1, jd2)}."""
     rows = {}
     if not path or not os.path.exists(path):
         return rows
@@ -65,7 +62,7 @@ def load_base(path):
 
 
 def jd_to_ddmmyyyy(jd):
-    """JD -> dd/mm/yyyy (takvim tarihi, UT)."""
+    """JD -> dd/mm/yyyy."""
     z = int(jd + 0.5)
     f = jd + 0.5 - z
     if z >= 2299161:
@@ -83,79 +80,78 @@ def jd_to_ddmmyyyy(jd):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("pattern", help="FITS dosyalari icin glob deseni")
+    ap.add_argument("pattern", help="for FITS files glob pattern")
     ap.add_argument("--base", default=None,
-                    help="korunacak mevcut tess_sectors.dat")
+                    help="preserve the current tess_sectors.dat")
     ap.add_argument("-o", "--out", default="tess_sectors.dat")
     ap.add_argument("--inplace", action="store_true",
-                    help="kurulu eclipsr paketindeki dosyayi guncelle")
+                    help="Update the file in the installed ECLIPSR package.")
     args = ap.parse_args()
 
     files = sorted(glob.glob(args.pattern))
     if not files:
-        sys.exit(f"'{args.pattern}' ile eslesen dosya yok")
+        sys.exit(f"No files matching with '{args.pattern}'")
 
     found = {}
     for fn in files:
         try:
             res = read_fits_sector(fn)
         except Exception as exc:
-            print(f"  atlandi {os.path.basename(fn)}: {exc}")
+            print(f"  Skipped {os.path.basename(fn)}: {exc}")
             continue
         if res is None:
-            print(f"  atlandi {os.path.basename(fn)}: SECTOR/TIME okunamadi")
+            print(f"  Skipped {os.path.basename(fn)}: SECTOR/TIME can't be read")
             continue
         s, t0, t1 = res
-        if s in found:  # ayni sektorden birden fazla dosya -> birlestir
+        if s in found: 
             t0 = min(t0, found[s][0])
             t1 = max(t1, found[s][1])
         found[s] = (t0, t1)
 
-    print(f"{len(files)} dosya okundu, {len(found)} sektor bulundu: "
+    print(f"{len(files)} files read, {len(found)} sectors are found: "
           f"{sorted(found)}")
 
     rows = load_base(args.base)
     if rows:
-        print(f"temel dosyadan {len(rows)} satir alindi")
+        print(f"{len(rows)} rows were retrieved from the base file.")
 
     for s, (t0, t1) in found.items():
         rows[s] = (t0 + BJD_REF - PAD, t1 + BJD_REF + PAD)
 
-    # sektorler arasi ortusmeyi temizle: bir sektorun bitisi bir sonrakinin
-    # baslangicini gecerse ikisinin ortasindan kes
+    # Clean up cross-sector overlap: If one sector crosses the beginning of another, cut it off midway.
     keys = sorted(rows)
     for a, b in zip(keys[:-1], keys[1:]):
         if rows[a][1] > rows[b][0]:
             mid = 0.5 * (rows[a][1] + rows[b][0])
             rows[a] = (rows[a][0], mid)
             rows[b] = (mid, rows[b][1])
-            print(f"  sektor {a}/{b} ortusmesi {mid:.4f} noktasindan kesildi")
+            print(f"  Sector {a}/{b} overlap was cut at point {mid:.4f}")
 
-    # son kontrol: her satir kendi icinde tutarli ve zaman sirasi sektor
-    # sirasiyla ayni olmali. Degilse yazma -- bozuk bir dosya sessizce
-    # veriyi sifirlamaktan daha kotudur.
+    # final check: each row must be internally consistent, and the chronological
+    # order must be maintained. If not, do not write—a corrupted file is worse
+    # than silently discarding the data.
     keys = sorted(rows)
     problems = []
     for s in keys:
         if rows[s][1] <= rows[s][0]:
-            problems.append(f"  sektor {s}: bitis <= baslangic "
+            problems.append(f"  Sector {s}: end <= start "
                             f"({rows[s][0]:.3f} -> {rows[s][1]:.3f})")
     for a, b in zip(keys[:-1], keys[1:]):
         if rows[b][0] < rows[a][1]:
-            problems.append(f"  sektor {a} ile {b} hala ortusuyor")
+            problems.append(f"  Sector {a} and {b} are still in match")
     if problems:
-        print("\nDOSYA YAZILMADI -- tutarsiz satirlar:", file=sys.stderr)
+        print("\nFILE NOT WRITTEN -- inconsistent lines:", file=sys.stderr)
         print("\n".join(problems), file=sys.stderr)
-        sys.exit("FITS'ten gelen zamanlar temel tabloyla uyusmuyor. "
-                 "Dosyalarin TSTART/TSTOP degerlerini ve --base dosyasini "
-                 "kontrol edin (BTJD mi, tam BJD mi?).")
+        sys.exit("The times from the FITS file do not match the master table."
+                 "The TSTART/TSTOP values ​​of the files and the --base file. "
+                 "check (BTJD or full BJD?).")
 
     out = args.out
     if args.inplace:
         import eclipsr
         out = os.path.join(os.path.dirname(eclipsr.__file__),
                            "data", "tess_sectors.dat")
-        print(f"yazilacak dosya: {out}")
+        print(f"file to write: {out}")
 
     with open(out, "w") as f:
         f.write("# sector\tdates\t\t\t    JD1\t\t     JD2\n")
@@ -163,7 +159,7 @@ def main():
             j1, j2 = rows[s]
             f.write(f"{s} {jd_to_ddmmyyyy(j1)}-{jd_to_ddmmyyyy(j2)}"
                     f"       {j1:.5f}       {j2:.5f}\n")
-    print(f"{len(rows)} satir yazildi -> {out}")
+    print(f"{len(rows)} rows written -> {out}")
 
 
 if __name__ == "__main__":
