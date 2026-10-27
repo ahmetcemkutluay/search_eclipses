@@ -31,12 +31,6 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-<!-- TODO: fill in the specifics —
-     - TESS sectors / cadence used
-     - product type (SPOC 2-min, TGLC, QLP, ...)
-     - expected directory layout under lightcurves/
-     - approximate disk space required
--->
 
 ## Usage
 
@@ -64,13 +58,9 @@ python download_main.py               # build the list (if absent) and download
 
 Light curves land in `lightcurves/tic_<tic>/`.
 
-### Estimating cost before you start
 
-To find out how much time and disk the full list needs, download a small stratified sample and extrapolate:
 
-```bash
-python utils/measure_run.py --list test/download_list.csv --n 60
-```
+
 
 Below, brief descriptions of all files are given.
 
@@ -85,6 +75,14 @@ Below, brief descriptions of all files are given.
 | `utils/build_tess_sectors.py` | Rebuilds `tess_sectors.dat` from the `TSTART`/`TSTOP` headers of your own TESS FITS files, extending ECLIPSR's coverage beyond sector 55|
 | `utils/measure_run.py` | Estimates download time and disk usage from a small sample |
 
+
+## Estimating cost before you start
+
+To find out how much time and disk the full list needs, download a small stratified sample and extrapolate:
+
+```bash
+python utils/measure_run.py --list test/download_list.csv --n 60
+```
 
 ## Note on TESS sector coverage
 
@@ -111,11 +109,5 @@ Worked examples are in `examples/`, covering typical cases encountered in the su
 If you use this code, please cite:
 
 - ECLIPSR — IJspeert et al., *Automated eclipse classification of OBAF-type eclipsing binaries from TESS*, A&A 2021
-- <!-- TODO: reference for the two-Gaussian model you implement -->
-- <!-- TODO: your own paper / thesis, once available -->
-
-## License
-
-<!-- TODO: choose one. MIT is common for research code; without a license file
-     others technically have no right to reuse the code. -->
-!-- TODO: correct the order and add any required arguments or config files. -->
+- Two Gaussian + cosine model — Mowlavi et al., *Two-Gaussian models applied to OGLE-III eclipsing binary light curves in the Large Magellanic Cloud*, A&A 2017 
+- Kutluay & Southworth, in prep --- An eclipsing binary catalogue in PLATO LOPS2 Field. 
