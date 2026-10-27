@@ -1,36 +1,79 @@
-"""Download the whole download_list.csv, N processes in parallel.
+"""Build the download list, then download it with N processes in parallel.
 
-Each process takes the targets with tic % N == its own index, so no two
-ever touch the same tic_* folder or the same status row.  Stop it whenever
-you like: each process writes its status on the way out and picks up from
-there on the next run.  N = 1 runs it serially.
+Stage 1 (once, in the parent process) runs the selection criteria over the
+product inventory and writes download_list.csv.  Stage 2 shards that list by
+tic % N, so no two processes ever touch the same tic_* folder or the same
+status row.  Stop it whenever you like: each process writes its status on the
+way out and picks up from there on the next run.  N = 1 runs it serially.
 """
 
 from pathlib import Path
+import argparse
 import multiprocessing as mp
 import time
 
 import pandas as pd
 
-from get_lightcurve import Download    
+from get_lightcurve import Criteria, Download
 
 N = 6               # parallel processes
 CHUNK = 2000        # targets resolved + transferred per round
 BATCH = 200         # observations per get_product_list call
 FLUSH = 200         # targets between status writes
 
+# --- inputs and outputs ----------------------------------------------------
+
+SUMMARY_FILE = Path('test_files') / 'tess_products_summary.csv'
+LONG_FILE = Path('test_files') / 'tess_products_long.csv'
+DOWNLOAD_LIST = Path('test_files') / 'download_list.csv'
+
+LC_DIR = Path('test_files/lightcurves')
+SHARD_DIR = Path('test_files/shards')
+STATUS_DIR = Path('test_files/status')
+
+
+def build_download_list(rebuild=False):
+    """Run the selection criteria and write the download list.
+
+    Called once, in the parent process, before any worker starts: the
+    workers all read this file and must not race to write it.
+    """
+    if DOWNLOAD_LIST.is_file() and not rebuild:
+        out = pd.read_csv(DOWNLOAD_LIST)
+        print(f'{DOWNLOAD_LIST} exists: {len(out)} rows, '
+              f'{out["tic"].nunique()} targets (--rebuild to redo it)')
+        return out
+
+    for f in (SUMMARY_FILE, LONG_FILE):
+        if not f.is_file():
+            raise SystemExit(f'{f} not found — run tess_products.py first')
+
+    c = Criteria(SUMMARY_FILE, LONG_FILE)
+    c.assign_all()
+
+    DOWNLOAD_LIST.parent.mkdir(parents=True, exist_ok=True)
+    out = c.write_output(DOWNLOAD_LIST)
+
+    print(f'{DOWNLOAD_LIST}: {len(out)} rows, {out["tic"].nunique()} targets')
+    print('\npipeline distribution:')
+    print(c.info['prov'].value_counts(dropna=False).to_string())
+    print('\ncadence distribution:')
+    print(out['exptime'].value_counts(dropna=False).to_string())
+
+    return out
+
 
 def work(shard):
-    Path('shards').mkdir(exist_ok=True)
-    Path('status').mkdir(exist_ok=True)
+    SHARD_DIR.mkdir(exist_ok=True)
+    STATUS_DIR.mkdir(exist_ok=True)
 
-    df = pd.read_csv('test/download_list.csv')
+    df = pd.read_csv(DOWNLOAD_LIST)
     df = df[df['tic'].astype(int) % N == shard]
-    list_file = f'shards/download_list_{shard}.csv'
+    list_file = SHARD_DIR / f'download_list_{shard}.csv'
     df.to_csv(list_file, index=False)
 
-    d = Download(list_file, out_dir='lightcurves',
-                 status_file=f'status/download_status_{shard}.csv')
+    d = Download(list_file, out_dir=LC_DIR,
+                 status_file=STATUS_DIR / f'download_status_{shard}.csv')
 
     pend = d.pending_rows()
     pairs = pend[['tic', 'prov']].drop_duplicates().values.tolist()
@@ -86,6 +129,20 @@ def work(shard):
 
 
 if __name__ == '__main__':
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--rebuild', action='store_true',
+                    help='rebuild download_list.csv even if it exists')
+    ap.add_argument('--list-only', action='store_true',
+                    help='write download_list.csv and stop')
+    args = ap.parse_args()
+
+    # ---- stage 1: the download list, once, before the pool ----
+    build_download_list(rebuild=args.rebuild)
+
+    if args.list_only:
+        raise SystemExit(0)
+
+    # ---- stage 2: download it, N processes in parallel ----
     t0 = time.perf_counter()
     try:
         with mp.Pool(N) as pool:
@@ -95,7 +152,7 @@ if __name__ == '__main__':
 
     print(f'\n{(time.perf_counter() - t0) / 3600:.1f} h')
 
-    files = sorted(Path('status').glob('download_status_*.csv'))
+    files = sorted(STATUS_DIR.glob('download_status_*.csv'))
     if files:
         st = pd.concat([pd.read_csv(f) for f in files], ignore_index=True)
         print(f'{len(st)} sector-rows')
