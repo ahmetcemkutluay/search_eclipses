@@ -26,6 +26,8 @@ test/
 status/
 shards/
 results/
+test_files/
+personal_access_token.txt
 
 #some other examples to ignore
 examples/plots/
@@ -43,3 +45,4 @@ examples/star_shadow_example.ipynb
 examples/two_gaussian_example.ipynb
 examples/phase_dispersion_minimization.ipynb
 examples/eclipsr_example_pulsation.ipynb
+
