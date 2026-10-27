@@ -1,0 +1,17 @@
+# Pinned to the environment this pipeline was developed and run on.
+# Python 3.7.8
+
+numpy==1.21.6
+pandas==1.3.5
+scipy==1.5.2
+astropy==4.3.1
+astroquery==0.4.7
+matplotlib==3.1.1
+tqdm==4.68.2
+pyarrow==12.0.1
+
+# Used only for inspecting light curves, not by the download or analysis path.
+lightkurve==2.0.11
+
+# Not on PyPI. Pin a commit for reproducibility once you know which one you ran.
+eclipsr @ git+https://github.com/LucIJspeert/eclipsr.git
