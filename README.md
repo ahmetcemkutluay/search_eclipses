@@ -55,6 +55,24 @@ python eclipsr_main.py      # 2. run the eclipse search
 | `eclipsr_main.py` | TODO — main driver for the eclipse search |
 | `utils/` | TODO — shared helper functions |
 
+## Note on TESS sector coverage
+
+The `tess_sectors.dat` file bundled with ECLIPSR covers sectors up to 55.
+If you intend to run `search_eclipses` on later sectors, regenerate it first:
+
+```bash
+python utils/build_tess_sectors.py
+```
+
+Then copy the generated file over the one shipped with ECLIPSR:
+
+```bash
+cp tess_sectors.dat $(python -c "import eclipsr, pathlib; print(pathlib.Path(eclipsr.__file__).parent)")/data/tess_sectors.dat
+```
+
+Without this step, light curves from sectors beyond 55 will not be
+assigned the correct timing reference.
+
 ## Output
 
 <!-- TODO: describe what lands in results/ — file format, one row per target?,
