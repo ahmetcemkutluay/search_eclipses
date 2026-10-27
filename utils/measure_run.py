@@ -137,7 +137,7 @@ def main(list_file, n, out_dir, batch_size, keep):
 
 if __name__ == '__main__':
     p = argparse.ArgumentParser()
-    p.add_argument('--list', default='test/download_list.csv')
+    p.add_argument('--list', default='test_files/download_list.csv')
     p.add_argument('--n', type=int, default=60)
     p.add_argument('--out-dir', default='measure_sample')
     p.add_argument('--batch-size', type=int, default=200)
