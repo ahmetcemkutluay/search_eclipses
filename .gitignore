@@ -1,0 +1,45 @@
+#Gizli bilgiler
+.env
+.env.local
+*.key
+
+
+#Bağımlılıklar
+node_modules/
+venv/
+__pycache__/
+
+#Derleme çıktıları
+dist/
+build/
+*.pyc
+
+# Editör ve sistem
+.vscode/
+.idea/
+.DS_Store
+
+
+#ignore edilecek dosyalar
+lightcurves/
+test/
+status/
+shards/
+results/
+
+#some other examples to ignore
+examples/plots/
+examples/results/
+examples/eclipsr_example_downlink.ipynb
+examples/eclipsr_example_eccentric.ipynb
+examples/eclipsr_example_failed.ipynb
+examples/eclipsr_example_good_detached.ipynb
+examples/eclipsr_example_noisy.ipynb
+examples/eclipsr_example_sampling.ipynb
+examples/eclipsr_example_shallow.ipynb
+examples/eclipsr_example_tglc2_good.ipynb
+examples/eclipsr_example_tglc3_????.ipynb
+examples/star_shadow_example.ipynb
+examples/two_gaussian_example.ipynb
+examples/phase_dispersion_minimization.ipynb
+examples/eclipsr_example_pulsation.ipynb
