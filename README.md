@@ -2,9 +2,9 @@
 
 Eclipse detection in TESS light curves using ECLIPSR and a two-Gaussian model.
 
-This pipeline downloads TESS photometry, runs [ECLIPSR](https://github.com/LucIJspeert/eclipsr) to flag candidate eclipsing systems, and fits a two-Gaussian model to the folded light curves to characterise the eclipses.
+For a given number of eclipsing binaries, this pipeline (1) downloads TESS photometry from [TGLC](https://archive.stsci.edu/hlsp/tglc), [SPOC](https://archive.stsci.edu/hlsp/tess-spoc/), [T16](https://archive.stsci.edu/hlsp/t16) and [QLP](https://archive.stsci.edu/hlsp/qlp) pipelines, (2) runs [ECLIPSR](https://github.com/LucIJspeert/eclipsr) to flag candidate eclipsing systems and find their corresponding mid-eclipse times and periods, and (3) fits a two-Gaussian+cosine model to the folded light curves to characterise the eclipses.
 
-<!-- TODO: add a line on the scope of the survey — which TESS sectors, which target list, roughly how many stars. -->
+In our upcoming PLATO LOPS2 field EB catalogue (Kutluay & Southworth, in prep), we applied this pipeline to ~145,000 EB candidates retrieved from multiple surveys. To provide a follow-up for users, we added two example target list in `example_records_list.csv` and `example_measurements_list.csv`. 
 
 ## Installation
 
@@ -95,3 +95,4 @@ If you use this code, please cite:
 
 <!-- TODO: choose one. MIT is common for research code; without a license file
      others technically have no right to reuse the code. -->
+
