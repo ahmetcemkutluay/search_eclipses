@@ -6,8 +6,8 @@
 
 import pandas as pd
 
-SUMMARY = 'test/tess_products_summary.csv'
-LONG = 'test/tess_products_long.csv'
+SUMMARY = 'test_files/tess_products_summary.csv'
+LONG = 'test_files/tess_products_long.csv'
 PROVS = ('SPOC', 'TGLC', 'QLP', 'T16')
 
 info = pd.read_csv(SUMMARY)
