@@ -1,6 +1,6 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="/logo.svg">
+    <source media="(prefers-color-scheme: dark)" srcset="/logo-dark.png">
     <img alt="search_eclipses" src="assets/logo-light.svg" width="440">
   </picture>
 </p>
