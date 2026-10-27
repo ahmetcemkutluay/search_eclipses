@@ -31,7 +31,7 @@ class product():
         self.provs = tuple(provs)
 
 
-    def read_records(self, type='parquet', delim='None'):
+    def read_records(self, type='csv', delim='None'):
 
         file_path = Path(self.rec_path)
 
@@ -46,7 +46,7 @@ class product():
         return file
 
 
-    def read_measurements(self, type='parquet', delim='None'):
+    def read_measurements(self, type='csv', delim='None'):
         file_path = Path(self.meas_path)
 
         if type == 'csv':
@@ -298,10 +298,10 @@ class product():
 
 if __name__ == '__main__':
 
-    rec_path = Path('..') / 'platolops2_catalog' / 'records_v8.parquet'
-    meas_path = Path('..') / 'platolops2_catalog' / 'measurements.parquet'
-    fig_out_path = Path('..') / 'figures'
-    file_out_path = Path('.') / 'test'
+    rec_path = Path('.') / 'example_records_list.csv'
+    meas_path = Path('.') / 'example_measurements_list.csv'
+    fig_out_path = Path('.') / 'figures'
+    file_out_path = Path('.') / 'test_files'
 
     products = product(rec_path, meas_path, file_out_path, fig_out_path)
     tics = products.get_tics()
