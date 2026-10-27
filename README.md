@@ -1,4 +1,9 @@
-# search_eclipses
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="/logo.svg">
+    <img alt="search_eclipses" src="assets/logo-light.svg" width="440">
+  </picture>
+</p>
 
 Eclipse detection in TESS light curves using ECLIPSR and combinations of two-Gaussian + cosine models.
 
