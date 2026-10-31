@@ -27,6 +27,7 @@ status/
 shards/
 results/
 test_files/
+analysis/
 personal_access_token.txt
 
 #some other examples to ignore
