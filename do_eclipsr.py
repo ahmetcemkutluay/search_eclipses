@@ -12,8 +12,7 @@
         - results.csv -- one row per target (scalars + width/depth statistics)
         - eclipses.csv -- one row per eclipse (long format, tics)
         - failed.csv -- target that raised error
-        - plots/sep/ -- one plot panel per sector / target
-        - plots/all/ -- stitched light curve
+        - plots/all/ -- one plot panel per target
         - plots/results/ -- phase-folded light curve
 """
 
@@ -77,16 +76,16 @@ class ECLIPSR():
             return pd.read_parquet(path, engine="pyarrow")
         raise ValueError(f"unsupported file format: {ext}")
 
-    def __init__(self, path_records, path_status, path_lc, path_output):
+    def __init__(self, path_records, path_status, path_lc, path_output, load_tables=True):
         self.path_recs = path_records
         self.path_status = path_status
         self.path_lc = Path(path_lc)
         self.path_out = Path(path_output)
 
-        self.recs = self._load_table(self.path_recs)
-        self.status = self._load_table(self.path_status)
-
-        self.tics = self.recs['tic'].astype(str)
+        if load_tables:
+            self.recs = self._load_table(self.path_recs)
+            self.status = self._load_table(self.path_status)
+            self.tics = self.recs['tic'].astype(str)
 
     def if_file_exists(self, tic_id):
         """make a check to see which tic_ids exists in lightcurve folder."""
@@ -139,37 +138,67 @@ class ECLIPSR():
         return sorted(folder.rglob("*.fits"))
 
     def read_lc(self, path):
-        """ read single fits -> (time, normalized flux, pipeline, sector, fcol, tessmag) """
-        FLUX_COLUMNS = ['SAP_FLUX', 'cal_aper_flux', 'KSPSAP_FLUX', 'DET_FLUX', 'FLUX']
-
+        """ read single fits -> (time, normalized flux, pipeline, sector, fcol, tessmag)"""
+        # in order of preference; the first match wins
+        TIME_COLUMNS    = ['TIME', 'time', 'TMID_BJD']
+        FLUX_COLUMNS    = ['SAP_FLUX', 'cal_aper_flux', 'KSPSAP_FLUX', 'DET_FLUX', 'FLUX']
+        MAG_COLUMNS     = ['IRM3']            # T16 -- magnitudes, not flux
+        QUALITY_COLUMNS = ['QUALITY', 'TGLC_flags']
+ 
         with fits.open(path) as hdul:
             h0, d = hdul[0].header, hdul[1].data
             cols = hdul[1].columns.names
-
+ 
+            tcol = next((c for c in TIME_COLUMNS if c in cols), None)
+            if tcol is None:
+                raise ValueError(f'No time column in {Path(path).name}; '
+                                f'available: {cols}')
+ 
+            # flux first; magnitudes only when no flux column is present
             fcol = next((c for c in FLUX_COLUMNS if c in cols), None)
-            if fcol is None:
-                raise ValueError(f"No flux column found for given set of columns.")
-
-            t = np.asarray(d['TIME'], dtype=float)
-            f = np.asarray(d[fcol], dtype=float)
-            q = np.asarray(d['QUALITY'] if 'QUALITY' in cols else d['TGLC_flags'] if 'TGLC_flags' in cols else np.zeros_like(t)
-                           , dtype=int)
-
-            #finite time and flux, positive flux and quality flags applied.
-            good = np.isfinite(t) & np.isfinite(f) & (f > 0) & (q == 0)
-
-            t, f = t[good], f[good]
-
-            f = f / np.median(f) #normalize
-
-            pipe = ('SPOC' if h0.get('ORIGIN') == 'NASA/Ames' 
-                    else 'TGLC' if h0.get('ORIGIN') == 'UCSB/TGLC'
-                    else 'QLP' if h0.get('ORIGIN') == 'MIT/QLP'
-                    else 'T16')
+            mcol = next((c for c in MAG_COLUMNS if c in cols), None) if fcol is None else None
+            if fcol is None and mcol is None:
+                raise ValueError(f'No flux or magnitude column in {Path(path).name}; '
+                                f'available: {cols}')
+ 
+            t = np.asarray(d[tcol], dtype=float)
+            y = np.asarray(d[fcol if fcol is not None else mcol], dtype=float)
+ 
+            qcol = next((c for c in QUALITY_COLUMNS if c in cols), None)
+            q = np.asarray(d[qcol], dtype=int) if qcol is not None \
+                else np.zeros(t.size, dtype=int)
+ 
+            # Some pipelines publish full BJD rather than BTJD (BJD_TDB - 2457000).
+            # Without this guard the sectors of one target would be stitched
+            # ~2.46e6 days apart and no period could ever be found.
+            if t.size and np.nanmedian(t) > 2.4e6:
+                t = t - 2457000.0
+ 
+            # finite time and flux, quality flags applied. Positivity is a flux test
+            # only -- an instrumental magnitude may legitimately be any value.
+            good = np.isfinite(t) & np.isfinite(y) & (q == 0)
+            if fcol is not None:
+                good &= (y > 0)
+ 
+            t, y = t[good], y[good]
+            if t.size == 0:
+                raise ValueError(f'No good points left in {Path(path).name}')
+ 
+            if mcol is not None:
+                f = 10.0 ** (-0.4 * (y - np.median(y)))   # mag -> relative flux
+                used = mcol
+            else:
+                f = y / np.median(y)                      # normalize
+                used = fcol
+ 
+            pipe = ('SPOC' if h0.get('ORIGIN') == 'NASA/Ames'
+                else 'TGLC' if h0.get('ORIGIN') == 'UCSB/TGLC'
+                else 'QLP' if h0.get('ORIGIN') == 'MIT/QLP'
+                else 'T16')
             sector = h0.get('SECTOR')
             tessmag = h0.get('TESSMAG')
-
-        return t, f, pipe, sector, fcol, tessmag
+ 
+            return t, f, pipe, sector, used, tessmag
 
     def phase(self, time, flux, period, t_0):
         """ return a phased light curve between -0.25 and 0.75, so that both primary and secondary can be seen."""
@@ -311,26 +340,13 @@ class ECLIPSR():
 
             secs = '-'.join(str(l[3]) for l in sel)
             plot_all_dir = results_path / 'plots' / 'all'
-            plot_sep_dir = results_path / 'plots' / 'sep'
             plot_results = results_path / 'plots' / 'results'
             plot_all_dir.mkdir(parents=True, exist_ok=True)
-            plot_sep_dir.mkdir(parents=True, exist_ok=True)
             plot_results.mkdir(parents=True, exist_ok=True)
 
             if verbose:
                 print(f'\nPipeline: {chosen}; {len(sel)} sector(s)')
 
-            ## now make a plot of the complete lightcurve. 
-            fig, axes = plt.subplots(len(sel), 1, figsize=(11, 2.2 * len(sel)), squeeze=False)
-            for ax, (t,f,pipe,sec,fcol,_tmag) in zip(axes[:,0], sel):
-                ax.plot(t,f,'.', ms=1)
-                ax.set_title(f'TIC {tic_id}, TESSmag = {tmag}, sector {sec}, {pipe}, cadence: {np.median(np.diff(t))*24*60:5.1f} min', fontsize= 9)
-                ax.set_ylabel('normalized flux')
-            axes[-1, 0].set_xlabel('BTJD - 2,450,000')
-            plt.tight_layout()
-            if savefig:
-                fig.savefig(plot_sep_dir / f'{tic_id}_{chosen}_S{secs}_panels.png', dpi=150, bbox_inches='tight')
-            plt.close(fig)
 
             ## now concatenate the light curves.
             times, signal = np.concatenate([l[0] for l in sel]), np.concatenate([l[1] for l in sel])
@@ -352,7 +368,7 @@ class ECLIPSR():
             plt.title(f'TIC {tic_id}, {chosen}, TESSmag = {tmag}, cadence: {np.median(np.diff(times))*24*60:5.1f} min')
             plt.tight_layout()
             if savefig:
-                fig2.savefig(plot_all_dir / f'{tic_id}_{chosen}_S{secs}_all.png', dpi=150, bbox_inches='tight')
+                fig2.savefig(plot_all_dir / f'{tic_id}_{chosen}_S{secs}_all.png', dpi=150)
             plt.close(fig2)
             
             times_ecl, flux_ecl = ecl.utility.ingest_signal(times, signal, tess_sectors=True)
@@ -369,6 +385,7 @@ class ECLIPSR():
             meta = {'pipeline': chosen,
                     'sectors': secs, 
                     'n_sectors': len(sel),
+                    'fcol': sel[0][4],
                     'tess_mag': tmag,
                     'cadence_min': cad,
                     'n_points': len(times),
@@ -387,7 +404,7 @@ class ECLIPSR():
                 plt.ylabel('normalized flux')
                 plt.title(f'TIC {tic_id}, {chosen}, P = {period:.5f}, t0= {t_0:.6f}, score= {score:.3f}')
                 plt.tight_layout()
-                fig.savefig(plot_results/ f'{tic_id}_{chosen}_S{secs}_phase.png', dpi=150, bbox_inches='tight')
+                fig.savefig(plot_results/ f'{tic_id}_{chosen}_S{secs}_phase.png', dpi=150)
                 plt.close(fig)
 
             return {'summary': row, 'eclipses': df_ecl, 'result': result}
@@ -420,25 +437,9 @@ class ECLIPSR():
 
             secs = str(sec)
             plot_all_dir = results_path / 'plots' / 'all'
-            plot_sep_dir = results_path / 'plots' / 'sep'
             plot_results = results_path / 'plots' / 'results'
             plot_all_dir.mkdir(parents=True, exist_ok=True)
-            plot_sep_dir.mkdir(parents=True, exist_ok=True)
             plot_results.mkdir(parents=True, exist_ok=True) 
-
-            fig, axes = plt.subplots(1,1, figsize=(11, 2.2), squeeze=False)
-            ax = axes[0,0]
-            ax.plot(times, signal, '.', ms=1)
-            ax.set_title(f'TIC {tic_id}, TESSmag = {tmag_s}, sector {sec}, {chosen}, '
-                         f'cadence: {cad:5.1f} min', fontsize=9)
-            ax.set_ylabel('normalized flux')
-            ax.set_xlabel('BTJD - 2,450,000')
-            plt.tight_layout()
-            if savefig:
-                fig.savefig(plot_sep_dir / f'{tic_id}_{chosen}_S{secs}_panels.png',
-                            dpi=150, bbox_inches='tight')
-
-            plt.close(fig)
 
             ## gap statistics (one sector usually contains only downlink gap)
             gaps = np.diff(times)
@@ -458,7 +459,7 @@ class ECLIPSR():
             plt.tight_layout()
             if savefig:
                 fig2.savefig(plot_all_dir / f'{tic_id}_{chosen}_S{secs}_all.png',
-                             dpi=150, bbox_inches='tight')
+                             dpi=150)
             plt.close(fig2)
 
             ##ECLIPSR
@@ -476,6 +477,7 @@ class ECLIPSR():
             meta = {'pipeline': chosen,
                     'sectors': secs, 
                     'n_sectors': 1,
+                    'fcol': fcol,
                     'tess_mag': tmag,
                     'cadence_min': cad,
                     'n_points': len(times),
@@ -494,7 +496,7 @@ class ECLIPSR():
                 plt.ylabel('normalized flux')
                 plt.title(f'TIC {tic_id}, {chosen}, P = {period:.5f}, t0= {t_0:.6f}, score={score:.3f}')
                 plt.tight_layout()
-                fig.savefig(plot_results / f'{tic_id}_{chosen}_S{secs}_phase.png', dpi=150, bbox_inches='tight')
+                fig.savefig(plot_results / f'{tic_id}_{chosen}_S{secs}_phase.png', dpi=150)
                 plt.close(fig)
 
             return {'summary': row, 'eclipses': df_ecl, 'result': result}
@@ -511,9 +513,11 @@ if __name__ == "__main__":
     log_file = path_out / f"run_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
 
     with Tee(log_file):
+        start_time = time.time()   
+
         print(f'log -> {log_file}')
     
-        e = ECLIPSR(path_records, path_status, path_lc, path_out) #initialize ECLIPSR
+        e = ECLIPSR(path_records, path_status, path_lc, path_out, load_tables=True) #initialize ECLIPSR
     
         print(f'tic column dtype: {e.tics.dtype}')
         print(f'first tic: {e.tics.iloc[0]!r}')
@@ -562,3 +566,7 @@ if __name__ == "__main__":
             bad = cnt[cnt['rows'] != cnt['n_eclipses']]
             if len(bad):
                 print(bad)
+
+        end_time = time.time()
+
+        print(f"Elapsed: {end_time - start_time:.2f} seconds")
