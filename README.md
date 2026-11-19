@@ -9,22 +9,12 @@ Eclipse detection in TESS light curves using ECLIPSR and combinations of two-Gau
 
 Given a list of candidate eclipsing binaries, the pipeline runs in three stages:
 
-1. **Photometry retrieval.** TESS light curves are collected from the
-   [SPOC](https://archive.stsci.edu/hlsp/tess-spoc/),
-   [TGLC](https://archive.stsci.edu/hlsp/tglc),
-   [QLP](https://archive.stsci.edu/hlsp/qlp) and
-   [T16](https://archive.stsci.edu/hlsp/t16) pipelines, with one pipeline and
-   cadence selected per target according to availability.
-2. **Eclipse detection.** [ECLIPSR](https://github.com/LucIJspeert/eclipsr)
-   flags candidate eclipsing systems and measures their mid-eclipse times and
-   orbital periods.
-3. **Eclipse characterisation.** Different combinations of two-Gaussian plus cosine model are fitted to
-   the phase-folded light curves to describe the eclipse profiles and determine eclipse depths & widths
+1. **Photometry retrieval.** TESS light curves are collected from the [SPOC](https://archive.stsci.edu/hlsp/tess-spoc/), [TGLC](https://archive.stsci.edu/hlsp/tglc), [QLP](https://archive.stsci.edu/hlsp/qlp) and [T16](https://archive.stsci.edu/hlsp/t16) pipelines, with one pipeline and cadence selected per target according to availability.
+2. **Eclipse detection ** through [ECLIPSR](https://github.com/LucIJspeert/eclipsr) code.
+3. ** Validation of targets by manual visual inspection ** This part requires an additional tool where you see all your targets, verify if the signal the code detects is an eclipse or not, and then report it to a seperate file. I've done my analysis via ``validate_eclipses`` module. You can find this repository in my profile. 
+4. **Eclipse characterisation.** Different combinations of two-Gaussian plus cosine model are fitted to the phase-folded light curves to describe the eclipse profiles and determine eclipse depths & widths
 
-The pipeline was developed for the PLATO LOPS2 eclipsing binary catalogue (Kutluay & Southworth, in prep.), where it was applied to approximately
-145,000 candidates compiled from several surveys. Two example target lists, `example_records_list.csv` and `example_measurements_list.csv`, are included so
-the pipeline can be run end to end without the full input catalogue.
-
+The pipeline was developed for the PLATO LOPS2 eclipsing binary catalogue (Kutluay et al., in prep.), where it was applied to approximately 145,000 candidates compiled from several surveys. Two example target lists, `example_records_list.csv` and `example_measurements_list.csv`, are included so the pipeline can be run end to end without the full input catalogue.
 
 ## Installation
 
@@ -36,7 +26,6 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-
 ## Usage
 
 You can start using the pipeline writing
@@ -47,10 +36,10 @@ python tess_products.py
 
 This writes two CSV files:
 
-| File | Contents |
-| --- | --- |
-| `tess_products_summary.csv` | One row per target, summarising what is available across all pipelines: sector counts per pipeline, the sectors themselves (`sec_SPOC`, `sec_QLP`, ...), available exposure times, and the period range (`period_min`, `period_max`)  | 
-| `tess_products_long.csv` | One row per available observation: `tic`, `prov` (pipeline), `sector`, `exptime`, `obsid`|
+| File                          | Contents                                                                                                                                                                                                                                     |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tess_products_summary.csv` | One row per target, summarising what is available across all pipelines: sector counts per pipeline, the sectors themselves (`sec_SPOC`, `sec_QLP`, ...), available exposure times, and the period range (`period_min`, `period_max`). These period ranges will be used in the detrending of the light curves later.|
+| `tess_products_long.csv`    | One row per available observation: `tic`, `prov` (pipeline), `sector`, `exptime`, `obsid`                                                                                                                                          |
 
 Then build the download list and fetch the light curves:
 
@@ -61,25 +50,22 @@ python download_main.py               # build the list (if absent) and download
 
 `--list-only` lets you inspect the pipeline and cadence distribution before committing to the transfer. The download runs in `N` parallel processes (set at the top of `download_main.py`), sharded by `tic % N` so no two processes touch the same target. It is safe to interrupt: each process writes its progress to `status/download_status_<n>.csv` and resumes from there on the next run.
 
-Light curves land in `lightcurves/tic_<tic>/`.
+Light curves will be downloaded in `lightcurves/tic_<tic>/`.
 
-
-
-
+Later, you can try detecting the eclipses using the ``eclipsr_main.py``, the results will be saved in plots, csv and .log format.
 
 Below, brief descriptions of all files are given.
 
-| Module | Purpose |
-| --- | --- |
-| `download_main.py` | Entry point for downloading TESS products |
-| `tess_products.py` | resolving / querying TESS data products |
-| `get_lightcurve.py` | loading and preparing light curves |
-| `do_eclipsr.py` | ECLIPSR wrapper, per-target analysis |
-| `eclipsr_main.py` | main driver for the eclipse search, recording results |
-| `utils/why_few_spocs.py` | check why the number of SPOC targets are low compared to others |
-| `utils/build_tess_sectors.py` | Rebuilds `tess_sectors.dat` from the `TSTART`/`TSTOP` headers of your own TESS FITS files, extending ECLIPSR's coverage beyond sector 55|
-| `utils/measure_run.py` | Estimates download time and disk usage from a small sample |
-
+| Module                          | Purpose                                                                                                                                        |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `download_main.py`            | Entry point for downloading TESS products                                                                                                      |
+| `tess_products.py`            | resolving / querying TESS data products                                                                                                        |
+| `get_lightcurve.py`           | loading and preparing light curves                                                                                                             |
+| `do_eclipsr.py`               | ECLIPSR wrapper, per-target analysis                                                                                                           |
+| `eclipsr_main.py`             | main driver for the eclipse search, recording results                                                                                          |
+| `utils/why_few_spocs.py`      | check why the number of SPOC targets are low compared to others                                                                                |
+| `utils/build_tess_sectors.py` | Rebuilds `tess_sectors.dat` from the `TSTART`/`TSTOP` headers of your own TESS FITS files, extending ECLIPSR's coverage beyond sector 55 |
+| `utils/measure_run.py`        | Estimates download time and disk usage from a small sample                                                                                     |
 
 ## Estimating cost before you start
 
@@ -114,5 +100,5 @@ Worked examples are in `examples/`, covering typical cases encountered in the su
 If you use this code, please cite:
 
 - ECLIPSR — IJspeert et al., *Automated eclipse classification of OBAF-type eclipsing binaries from TESS*, A&A 2021
-- Two Gaussian + cosine model — Mowlavi et al., *Two-Gaussian models applied to OGLE-III eclipsing binary light curves in the Large Magellanic Cloud*, A&A 2017 
-- Kutluay & Southworth, in prep --- An eclipsing binary catalogue in PLATO LOPS2 Field. 
+- Two Gaussian + cosine model — Mowlavi et al., *Two-Gaussian models applied to OGLE-III eclipsing binary light curves in the Large Magellanic Cloud*, A&A 2017
+- Kutluay et al., in prep --- An eclipsing binary catalogue in PLATO LOPS2 Field.
