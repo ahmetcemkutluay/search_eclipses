@@ -81,7 +81,7 @@ if __name__ == '__main__':
         start_time = time.time()
         print(f'log -> {log_file}')
 
-        e = ECLIPSR(path_records, path_status, path_lc, path_out)
+        e = ECLIPSR(path_records, path_status, path_lc, path_out, path_summary)
 
         e.reset_outputs() #each run, whole files are reseted
 
