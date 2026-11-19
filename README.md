@@ -10,8 +10,8 @@ Eclipse detection in TESS light curves using ECLIPSR and combinations of two-Gau
 Given a list of candidate eclipsing binaries, the pipeline runs in three stages:
 
 1. **Photometry retrieval.** TESS light curves are collected from the [SPOC](https://archive.stsci.edu/hlsp/tess-spoc/), [TGLC](https://archive.stsci.edu/hlsp/tglc), [QLP](https://archive.stsci.edu/hlsp/qlp) and [T16](https://archive.stsci.edu/hlsp/t16) pipelines, with one pipeline and cadence selected per target according to availability.
-2. **Eclipse detection ** through [ECLIPSR](https://github.com/LucIJspeert/eclipsr) code.
-3. ** Validation of targets by manual visual inspection ** This part requires an additional tool where you see all your targets, verify if the signal the code detects is an eclipse or not, and then report it to a seperate file. I've done my analysis via ``validate_eclipses`` module. You can find this repository in my profile. 
+2. **Eclipse detection** through [ECLIPSR](https://github.com/LucIJspeert/eclipsr) code.
+3. **Validation of targets by manual visual inspection** This part requires an additional tool where you see all your targets, verify if the signal the code detects is an eclipse or not, and then report it to a seperate file. I've done my analysis via ``validate_eclipses`` module. You can find this repository in my profile. 
 4. **Eclipse characterisation.** Different combinations of two-Gaussian plus cosine model are fitted to the phase-folded light curves to describe the eclipse profiles and determine eclipse depths & widths
 
 The pipeline was developed for the PLATO LOPS2 eclipsing binary catalogue (Kutluay et al., in prep.), where it was applied to approximately 145,000 candidates compiled from several surveys. Two example target lists, `example_records_list.csv` and `example_measurements_list.csv`, are included so the pipeline can be run end to end without the full input catalogue.
