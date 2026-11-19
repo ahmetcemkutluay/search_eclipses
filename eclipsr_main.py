@@ -28,6 +28,7 @@ path_records = Path('..') / 'platolops2_catalog' / 'records_v8.parquet'
 path_status  = Path('.') / 'status' / 'download_status_all.csv'
 path_lc      = Path('.') / 'lightcurves'
 path_out     = Path('.') / 'results'
+path_summary      = Path('.') / 'test' / 'tess_products_summary.csv'
 
 
 #number of processors, I use 14 processors as I have 24CPUs in Intel(R) Core(TM) i7-14650HX processor. Depending on your sample, you may use 4-6 processors.
@@ -46,7 +47,7 @@ def _on_alarm(signum, frame):
 
 def _init():
     global _E
-    _E = ECLIPSR(path_records, path_status, path_lc, path_out, load_tables=False)
+    _E = ECLIPSR(path_records, path_status, path_lc, path_out, path_summary, load_tables=False)
     if TIMEOUT:
         signal.signal(signal.SIGALRM, _on_alarm)
 
