@@ -28,6 +28,7 @@ import eclipsr as ecl #MAIN ANALYSIS
 import time #measure computing time
 from pathlib import Path #filepath control
 from astropy.io import fits #opening fits files
+from wotan import flatten
 
 import traceback
 import sys
@@ -76,15 +77,18 @@ class ECLIPSR():
             return pd.read_parquet(path, engine="pyarrow")
         raise ValueError(f"unsupported file format: {ext}")
 
-    def __init__(self, path_records, path_status, path_lc, path_output, load_tables=True):
+    def __init__(self, path_records, path_status, path_lc, path_output, path_summary, load_tables=True):
         self.path_recs = path_records
         self.path_status = path_status
         self.path_lc = Path(path_lc)
         self.path_out = Path(path_output)
+        self.path_sum = path_summary
 
         if load_tables:
             self.recs = self._load_table(self.path_recs)
             self.status = self._load_table(self.path_status)
+            self.summary = self._load_table(self.path_sum)
+            self.sum_tics = self.summary['tic'].astype(str)
             self.tics = self.recs['tic'].astype(str)
 
     def if_file_exists(self, tic_id):
@@ -137,13 +141,13 @@ class ECLIPSR():
             return []
         return sorted(folder.rglob("*.fits"))
 
-    def read_lc(self, path):
+    def read_lc(self, path, tic_id):
         """ read single fits -> (time, normalized flux, pipeline, sector, fcol, tessmag)"""
         # in order of preference; the first match wins
         TIME_COLUMNS    = ['TIME', 'time', 'TMID_BJD']
-        FLUX_COLUMNS    = ['SAP_FLUX', 'cal_aper_flux', 'KSPSAP_FLUX', 'DET_FLUX', 'FLUX']
+        FLUX_COLUMNS    = ['SAP_FLUX', 'aperture_flux', 'KSPSAP_FLUX', 'DET_FLUX', 'FLUX']
         MAG_COLUMNS     = ['IRM3']            # T16 -- magnitudes, not flux
-        QUALITY_COLUMNS = ['QUALITY', 'TGLC_flags']
+        QUALITY_COLUMNS = ['QUALITY', 'TESS_flags' ,'TGLC_flags']
  
         with fits.open(path) as hdul:
             h0, d = hdul[0].header, hdul[1].data
@@ -181,6 +185,10 @@ class ECLIPSR():
                 good &= (y > 0)
  
             t, y = t[good], y[good]
+
+            min_per = self.prior_period(self.path_sum, "period_min", tic_id)
+            window = 4.0 if not np.isfinite(min_per) else min_per*1.5
+
             if t.size == 0:
                 raise ValueError(f'No good points left in {Path(path).name}')
  
@@ -188,8 +196,9 @@ class ECLIPSR():
                 f = 10.0 ** (-0.4 * (y - np.median(y)))   # mag -> relative flux
                 used = mcol
             else:
-                f = y / np.median(y)                      # normalize
+                f, trend_f = flatten(t,y, window_length = window, method= "biweight", return_trend=True)     #normalization by WOTAN package, see Hippke et al. 2019
                 used = fcol
+                print(f"{tic_id}: period = {min_per} d; window_length={window}")
  
             pipe = ('SPOC' if h0.get('ORIGIN') == 'NASA/Ames'
                 else 'TGLC' if h0.get('ORIGIN') == 'UCSB/TGLC'
@@ -199,6 +208,22 @@ class ECLIPSR():
             tessmag = h0.get('TESSMAG')
  
             return t, f, pipe, sector, used, tessmag
+
+    def prior_period(self, path, col_per, tic_id, default=np.nan):
+        """ prior period for one target, read from tess_products_summary.csv, for wotan detrending and normalization"""
+        if not hasattr(self, '_prior_cache'):
+            self._prior_cache = {}
+
+        key = (str(path), col_per)
+        if key not in self._prior_cache:
+            df = pd.read_csv(path, usecols=['tic', col_per], dtype={'tic': str})
+            self._prior_cache[key] = (df.set_index('tic')[col_per]
+                                        .groupby(level=0).min()
+                                        .to_dict())
+
+        p = self._prior_cache[key].get(str(tic_id))
+        return float(p) if p is not None and np.isfinite(p) else default
+
 
     def phase(self, time, flux, period, t_0):
         """ return a phased light curve between -0.25 and 0.75, so that both primary and secondary can be seen."""
@@ -325,7 +350,7 @@ class ECLIPSR():
                 for f in fits_files:
                     print(f"{f.relative_to(folder)}")
 
-            lcs = [self.read_lc(f) for f in fits_files]
+            lcs = [self.read_lc(f, tic_id) for f in fits_files]
             if verbose:
                 for (t,f,pipe,sec,fcol,tmag), j in zip (lcs, fits_files):
                     print(f"{pipe:8s} SECTOR{sec:<4} {len(t):6d} points; cad~{np.median(np.diff(t))*24*60:5.1f} min [{fcol}]")
@@ -422,7 +447,7 @@ class ECLIPSR():
             if verbose:
                 print(f"{len(fits_files)} file(s) found.\n")
 
-            times, signal, chosen, sec, fcol, tmag = self.read_lc(f_path)
+            times, signal, chosen, sec, fcol, tmag = self.read_lc(f_path, tic_id)
 
             order = np.argsort(times)
             times, signal = times[order], signal[order]
@@ -509,6 +534,7 @@ if __name__ == "__main__":
     path_status  = Path('.') / 'status' / 'download_status_all.csv'
     path_lc      = Path('.') / 'test_files' / 'lightcurves'
     path_out     = Path('.') / 'test_results'
+    path_summary      = Path('.') / 'test' / 'tess_products_summary.csv'
 
     log_file = path_out / f"run_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
 
@@ -517,7 +543,8 @@ if __name__ == "__main__":
 
         print(f'log -> {log_file}')
     
-        e = ECLIPSR(path_records, path_status, path_lc, path_out, load_tables=True) #initialize ECLIPSR
+        e = ECLIPSR(path_records, path_status, path_lc, path_out, path_summary, load_tables=True) #initialize ECLIPSR
+        
     
         print(f'tic column dtype: {e.tics.dtype}')
         print(f'first tic: {e.tics.iloc[0]!r}')
