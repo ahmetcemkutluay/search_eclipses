@@ -229,7 +229,8 @@ class ECLIPSR():
         """ return a phased light curve between -0.25 and 0.75, so that both primary and secondary can be seen."""
         phase = ((time - t_0) / period + 0.25) % 1 - 0.25
         o = np.argsort(phase)
-        return phase[o], flux[o]
+        norm_flux = flux / np.median(flux)
+        return phase[o], norm_flux[o]
 
     def eclipse_tables(self, tic_id, chosen, secs, result): #this will produce the eclipses.csv in the end
         (t_0, period, score, sine_like, wide, n_kernel, width_stats, depth_stats,
